@@ -303,7 +303,7 @@ if (QUALITY === 'ultra' && IS_TOUCH) QUALITY = 'alto';
 if (GFX_AUTO) { const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const dm = navigator.deviceMemory, hc = navigator.hardwareConcurrency || 8;
   if (!iOS) { if ((dm && dm <= 2) || hc <= 2) QUALITY = 'baixo'; else if ((dm && dm <= 4) || hc <= 4) QUALITY = 'medio'; } }
-if (GFX_AUTO && WEAK_GPU) QUALITY = 'baixo';
+if (GFX_AUTO && WEAK_GPU && QUALITY === 'ultra') QUALITY = 'alto';
 const QC0 = QCFG[QUALITY]; let QC = QC0;
 
 // ---------- utilidades ----------
@@ -575,7 +575,7 @@ function buildSky(){
     const mm=new T.MeshBasicMaterial({color:'#8899aa',fog:false,side:T.DoubleSide});const mesh=new T.Mesh(g,mm);mesh.userData.shade=shade;mesh.frustumCulled=false;mesh.layers.enable(1);scene.add(mesh);mountains.push(mesh);}
 }
 const sun=new T.DirectionalLight(0xffffff,3);sun.castShadow=QC.shadow>0;
-const SC=sun.shadow.camera;function setShadowCfg(){const n=QC.shadow||1024;sun.shadow.mapSize.set(n,n);SC.left=-QC.sd;SC.right=QC.sd;SC.top=QC.sd;SC.bottom=-QC.sd;SC.near=1;SC.far=500;SC.updateProjectionMatrix();if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}}setShadowCfg();
+const SC=sun.shadow.camera;function setShadowCfg(){const n=WEAK_GPU?Math.min(QC.shadow||1024,2048):QC.shadow||1024;sun.shadow.mapSize.set(n,n);SC.left=-QC.sd;SC.right=QC.sd;SC.top=QC.sd;SC.bottom=-QC.sd;SC.near=1;SC.far=500;SC.updateProjectionMatrix();if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}}setShadowCfg();
 sun.shadow.bias=-0.0003;sun.shadow.normalBias=0.35;scene.add(sun);scene.add(sun.target);
 const hemi=new T.HemisphereLight(0xbcd4ea,0x7a6a4c,1.0);scene.add(hemi);
 const amb=new T.AmbientLight(0x404858,0.0);scene.add(amb);
@@ -586,7 +586,7 @@ const TQ = QUALITY==='baixo'?256:512;           // resolução das texturas
 const MAXANI = renderer.capabilities.getMaxAnisotropy();
 function canvasFrom(w,h,data){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');const id=g.createImageData(w,h);id.data.set(data);g.putImageData(id,0,0);return c;}
 function mkTex(c,srgb){const t=new T.CanvasTexture(c);t.colorSpace=srgb?T.SRGBColorSpace:T.NoColorSpace;t.wrapS=t.wrapT=T.RepeatWrapping;
-  t.anisotropy=Math.min(QUALITY==='alto'||QUALITY==='ultra'?16:2,MAXANI);t.generateMipmaps=true;t.minFilter=T.LinearMipmapLinearFilter;t.needsUpdate=true;return t;}
+  t.anisotropy=Math.min(QUALITY==='alto'||QUALITY==='ultra'?(WEAK_GPU?4:16):2,MAXANI);t.generateMipmaps=true;t.minFilter=T.LinearMipmapLinearFilter;t.needsUpdate=true;return t;}
 // gera cor + mapa de relevo (normal map) a partir de uma função de altura que se repete sem emenda
 function genTex(S,hf,cf,strength){const H=new Float32Array(S*S),A=new Uint8ClampedArray(S*S*4),N=new Uint8ClampedArray(S*S*4);const k=S/512;
   for(let y=0;y<S;y++)for(let x=0;x<S;x++)H[y*S+x]=hf(x/k,y/k);
@@ -763,7 +763,7 @@ function finalizeColumns(){
       for(const m of [s2,c,bI]){if(!m)continue;m.layers.enable(1);m.castShadow=true;m.receiveShadow=true;m.instanceMatrix.needsUpdate=true;m.computeBoundingSphere();scene.add(m);L[lv].push(m);}}}
   for(const L of LODS){L.x/=L.n;L.z/=L.n;}
 }
-function updateLODs(cp){for(const L of LODS){const d=Math.hypot(L.x-cp.x,L.z-cp.z);const near=d<(L.kind==='col'?QC.lodCol:QC.lodTree);
+function updateLODs(cp){const lk=clamp(renderer.getPixelRatio()*innerHeight/1300,.5,1);for(const L of LODS){const d=Math.hypot(L.x-cp.x,L.z-cp.z);const near=d<(L.kind==='col'?QC.lodCol:QC.lodTree)*lk;
   for(const m of L.hi)m.visible=near;for(const m of L.lo)m.visible=!near;
   // nas malhas únicas de longe, as árvores do pedaço que está perto somem (a versão detalhada assume) e voltam quando ele se afasta
   const F=L.far;if(F&&F.near!==near){F.near=near;for(const m of F.meshes){const a=m.instanceMatrix.array;if(near)a.fill(0,F.off*16,(F.off+F.n)*16);else a.set(F.mats,F.off*16);m.instanceMatrix.needsUpdate=true;}}}}
@@ -2282,7 +2282,7 @@ function grassLight(sh,hInv,amt){sh.uniforms.uSunDir=SKY_U.sunDir;sh.uniforms.uS
     float bl=pow(max(dot(normalize(-vViewPosition),sV),0.),3.)*smoothstep(-.05,.2,uSunDir.y);outgoingLight+=diffuseColor.rgb*uSunCol*bl*${amt.toFixed(2)}*vH*vH;}
   #include <opaque_fragment>`);}
 function flowerGeo(){return mergeGeos([{g:new T.CylinderGeometry(.01,.012,.4,5),m:mat(0,.2,0),c:new T.Color(.22,.3,.12)},{g:new T.IcosahedronGeometry(.07,0),m:mat(0,.42,0,0,1,.5,1),c:WHITE},{g:new T.SphereGeometry(.025,5,3),m:mat(0,.45,0),c:new T.Color(.15,.1,.05)}],true);}
-const GRASS={cell:16,rad:QC0.grad,per:QC0.grass,cache:new Map(),ci:null,cj:null,fw:new T.Vector3(0,0,-1)};
+const GRASS={cell:16,rad:QC0.grad,per:Math.round(QC0.grass*(WEAK_GPU?.6:1)),cache:new Map(),ci:null,cj:null,fw:new T.Vector3(0,0,-1)};
 function buildGrass(){
   const max=(5*2+1)**2*640;
   const gm=new T.MeshStandardMaterial({map:TEX.grass,vertexColors:true,alphaTest:.45,side:T.DoubleSide,roughness:.95,envMapIntensity:.4,alphaToCoverage:true});
@@ -2345,11 +2345,11 @@ function updateGrass(px,pz,force){const ci=Math.floor(px/GRASS.cell),cj=Math.flo
       const kt=Math.min(d.tm.length/16,tmax-nt);if(kt>0){tw.instanceMatrix.array.set(d.tm.subarray(0,kt*16),nt*16);nt+=kt;}}
     pb.count=np;tw.count=nt;pb.instanceMatrix.needsUpdate=true;pb.instanceColor.needsUpdate=true;tw.instanceMatrix.needsUpdate=true;}
   gm.count=n;fl.count=f;gm.instanceMatrix.needsUpdate=true;gm.instanceColor.needsUpdate=true;fl.instanceMatrix.needsUpdate=true;fl.instanceColor.needsUpdate=true;}
-function setGrassDensity(){GRASS.per=QC.grass;GRASS.rad=QC.grad;GRASS.cache.clear();}
+function setGrassDensity(){GRASS.per=Math.round(QC.grass*(WEAK_GPU?.6:1));GRASS.rad=QC.grad;GRASS.cache.clear();}
 
 // ---------- lâminas de grama individuais (perto da câmera): cada uma com altura, curvatura, inclinação e cor próprias ----------
-const BLADE={cell:4,rad:2,per:QC0.blades||0,cache:new Map(),ci:null,cj:null,fw:new T.Vector3(0,0,-1)};
-function bladeGeo(){const pos=[],nor=[],uv=[],col=[],idx=[],S=5;for(let j=0;j<=S;j++){const t=j/S,w=.011*(1-t*.94),bz=t*t*.24,sh=.4+.6*t;
+const BLADE={cell:4,rad:2,per:Math.round((QC0.blades||0)*(WEAK_GPU?.5:1)),cache:new Map(),ci:null,cj:null,fw:new T.Vector3(0,0,-1)};
+function bladeGeo(){const pos=[],nor=[],uv=[],col=[],idx=[],S=WEAK_GPU?3:5;for(let j=0;j<=S;j++){const t=j/S,w=.011*(1-t*.94),bz=t*t*.24,sh=.4+.6*t;
     pos.push(-w,t,bz,w,t,bz);nor.push(0,.35,1,0,.35,1);uv.push(0,t,1,t);col.push(sh,sh,sh,sh,sh,sh);}
   for(let j=0;j<S;j++){const a=j*2;idx.push(a,a+1,a+2,a+1,a+3,a+2);}
   const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pos,3));g.setAttribute('normal',new T.Float32BufferAttribute(nor,3));
@@ -2741,6 +2741,7 @@ function scenTick(dt){const c=SCEN[S.scen]||SCEN.dia,k=1-Math.exp(-dt*.8);
     u.uCol.value.setRGB(.74,.78,.84).multiplyScalar(.3+.7*ENV.day).addScalar(WX.flash*.5);}
   applyWet(WX.wet);
   if(GRADE_PASS){const u=GRADE_PASS.uniforms;u.uSat.value=1.28*WX.sat;u.uWarm.value=.025+WX.warm;u.uCon.value=1.08+.07*WX.storm;}
+  else if(CSS_GRADE){const f='saturate('+(1.28*WX.sat).toFixed(2)+') contrast('+(1.08+.07*WX.storm).toFixed(2)+') sepia('+clamp((.025+WX.warm)*2,0,.5).toFixed(2)+')';if(f!==_cssG){_cssG=f;canvas.style.filter=f;}}
   if(WAR.built)updateWar(dt);
   scenAudio();}
 
@@ -3686,20 +3687,20 @@ function cellInView(x0,z0,x1,z1,m=10){if(!VIEW.ok)return true;VIEW.b.min.set(x0-
 $('bSound').onclick=()=>{AU.on=!AU.on;$('bSound').textContent='Som: '+(AU.on?'ligado':'desligado');if(AU.master)AU.master.gain.value=AU.on?.8:0;};
 
 // ---------- gráficos ----------
-let COMPOSER=null,GRADE_PASS=null;
+let COMPOSER=null,GRADE_PASS=null,CSS_GRADE=false,_cssG='';
 const GRADE={uniforms:{tDiffuse:{value:null},uSat:{value:1.28},uCon:{value:1.08},uWarm:{value:.025}},
   vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
   fragmentShader:'uniform sampler2D tDiffuse;uniform float uSat,uCon,uWarm;varying vec2 vUv;void main(){vec4 c=texture2D(tDiffuse,vUv);float l=dot(c.rgb,vec3(.2126,.7152,.0722));vec3 r=mix(vec3(l),c.rgb,uSat);r=(r-.5)*uCon+.5;r+=vec3(uWarm,uWarm*.4,-uWarm);gl_FragColor=vec4(clamp(r,0.,1.),c.a);}'};
-function setupComposer(){GRADE_PASS=null;if(COMPOSER){COMPOSER.renderTarget1.dispose();COMPOSER.renderTarget2.dispose();COMPOSER=null;}if(QUALITY==='baixo')return;
+function setupComposer(){GRADE_PASS=null;if(COMPOSER){COMPOSER.renderTarget1.dispose();COMPOSER.renderTarget2.dispose();COMPOSER=null;}CSS_GRADE=WEAK_GPU&&QUALITY!=='baixo';if(!CSS_GRADE&&_cssG){canvas.style.filter='';_cssG='';}if(QUALITY==='baixo'||WEAK_GPU)return;
   const pr=renderer.getPixelRatio();const rt=new T.WebGLRenderTarget(innerWidth*pr,innerHeight*pr,{type:T.HalfFloatType,samples:(QUALITY==='alto'||QUALITY==='ultra')&&!IS_TOUCH&&!WEAK_GPU?8:4});
   COMPOSER=new EffectComposer(renderer,rt);COMPOSER.addPass(new RenderPass(scene,camera));
-  if(QC.bloom)COMPOSER.addPass(new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),.32,.5,.88));COMPOSER.addPass(new OutputPass());COMPOSER.addPass(GRADE_PASS=new ShaderPass(GRADE));}
+  if(QC.bloom){const bp=new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),.32,.5,.88);if(WEAK_GPU){const s0=bp.setSize.bind(bp);bp.setSize=(w,h)=>s0(w/2,h/2);}COMPOSER.addPass(bp);}COMPOSER.addPass(new OutputPass());COMPOSER.addPass(GRADE_PASS=new ShaderPass(GRADE));}
 function draw(){if(COMPOSER)COMPOSER.render();else renderer.render(scene,camera);}
 const QNAME={ultra:'ultra',alto:'alto',medio:'médio',baixo:'baixo'};
 function applyQuality(){QC=QCFG[QUALITY];DYN.pr=targetPR();DYN.probe=0;DYN.bad=0;DYN.hold=0;DYN.ceil=0;DYN.wasUp=false;renderer.setPixelRatio(DYN.pr);renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled=QC.shadow>0;sun.castShadow=QC.shadow>0;setShadowCfg();camera.far=QC.far;camera.updateProjectionMatrix();
   scene.traverse(o=>{if(o.material)[].concat(o.material).forEach(m=>m.needsUpdate=true);});
-  setGrassDensity();updateGrass(PLAYER.pos.x,PLAYER.pos.z,true);BLADE.per=QC.blades||0;BLADE.cache.clear();if(BLADE.mesh){BLADE.mesh.visible=BLADE.per>0;updateBlades(PLAYER.pos.x,PLAYER.pos.z,true);}
+  setGrassDensity();updateGrass(PLAYER.pos.x,PLAYER.pos.z,true);BLADE.per=Math.round((QC.blades||0)*(WEAK_GPU?.5:1));BLADE.cache.clear();if(BLADE.mesh){BLADE.mesh.visible=BLADE.per>0;updateBlades(PLAYER.pos.x,PLAYER.pos.z,true);}
   if(PLAYER.h&&PLAYER.h.shadowMesh)PLAYER.h.shadowMesh.visible=QC.shadow>0;setPointScale();setupComposer();$('bGfx').textContent='Gráficos: '+QNAME[QUALITY];}
 $('bGfx').onclick=()=>{GFX_AUTO=false;QUALITY=(IS_TOUCH?{alto:'medio',medio:'baixo',baixo:'alto'}:{ultra:'alto',alto:'medio',medio:'baixo',baixo:'ultra'})[QUALITY]||'alto';applyQuality();try{localStorage.setItem('olimpia-gfx',QUALITY);}catch(e){}};
 addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();setPointScale();if(COMPOSER)COMPOSER.setSize(innerWidth,innerHeight);});
@@ -3756,14 +3757,15 @@ function gfxNote(t){let el=$('gfxNote');if(!el){el=document.createElement('div')
     el.style.cssText='position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);background:rgba(28,20,14,.86);color:#f3e7cf;padding:8px 14px;border-radius:10px;font:500 14px/1.3 "Alegreya Sans",system-ui,sans-serif;z-index:60;pointer-events:none;max-width:86vw;text-align:center';document.body.appendChild(el);}
   el.textContent=t;el.hidden=false;clearTimeout(gfxNote.t);gfxNote.t=setTimeout(()=>{el.hidden=true;},4500);}
 // se mesmo na menor resolução o celular não passa de ~24 quadros por segundo, desce um nível de gráficos (só no automático)
-function autoGfx(fps,max){if(!GFX_AUTO||!STARTED||document.hidden)return;if(fps<24&&(DYN.pr<=max*.5+.01||DYN.hold>0))DYN.low=(DYN.low||0)+1;else DYN.low=0;
+const DFL=WEAK_GPU&&!IS_TOUCH?.8:.5,FPS_MIN=WEAK_GPU&&!IS_TOUCH?14:24;
+function autoGfx(fps,max){if(!GFX_AUTO||!STARTED||document.hidden)return;if(fps<FPS_MIN&&(DYN.pr<=max*DFL+.01||DYN.hold>0))DYN.low=(DYN.low||0)+1;else DYN.low=0;
   if(DYN.low>=3&&QUALITY!=='baixo'){DYN.low=0;QUALITY=QUALITY==='ultra'?'alto':QUALITY==='alto'?'medio':'baixo';applyQuality();gfxNote('Gráficos ajustados para '+QNAME[QUALITY]+' para o jogo rodar liso neste aparelho');}}
 function dynRes(realDt){DYN.t+=realDt;DYN.n++;if(DYN.t<1.5)return;const fps=DYN.n/DYN.t;DYN.t=0;DYN.n=0;const max=targetPR();let pr=DYN.pr;autoGfx(fps,max);
   if(DYN.ceilT>0&&--DYN.ceilT===0)DYN.ceil=0;
   if(DYN.hold>0){DYN.hold--;return;}
   // baixou a resolução e o jogo não ficou mais rápido? então o gargalo não é esse: volta a nitidez toda e para de mexer por um minuto
   if(DYN.probe){const gain=fps/DYN.probe;DYN.probe=0;if(gain<1.06){if(++DYN.bad>=2){DYN.bad=0;DYN.hold=40;if(Math.abs(max-DYN.pr)>.01)setPR(max);return;}}else DYN.bad=0;}
-  if(fps<FPS_CAP*.9&&pr>max*.5){DYN.probe=fps;pr=Math.max(max*.5,pr*.85);if(DYN.wasUp){DYN.ceil=pr;DYN.ceilT=40;}DYN.wasUp=false;}
+  if(fps<FPS_CAP*.9&&pr>max*DFL){DYN.probe=fps;pr=Math.max(max*DFL,pr*.85);if(DYN.wasUp){DYN.ceil=pr;DYN.ceilT=40;}DYN.wasUp=false;}
   else if(fps>FPS_CAP*.97&&pr<max&&(!DYN.ceil||pr*1.1<=DYN.ceil+.001)){pr=Math.min(max,pr*1.1);DYN.wasUp=true;}else return;
   if(Math.abs(pr-DYN.pr)<.01)return;setPR(pr);}
 function setPR(pr){DYN.pr=pr;renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight);if(COMPOSER){COMPOSER.setPixelRatio(pr);COMPOSER.setSize(innerWidth,innerHeight);}setPointScale();}

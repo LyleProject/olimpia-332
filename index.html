@@ -291,6 +291,9 @@ const QCFG={
               :{pr:2,shadow:4096,sd:80,blades:1300,grass:560,grad:4,bloom:true,crowd:.6,walkers:34,tn:400,trees:1,npcDist:170,lodTree:300,lodCol:150,far:4000,shadowEvery:1,cube:256},
   medio:{pr:1.5,shadow:2048,sd:55,blades:350,grass:190,grad:3,bloom:false,crowd:.35,walkers:22,tn:320,trees:.75,npcDist:120,lodTree:140,lodCol:90,far:3200,shadowEvery:2,cube:128},
   baixo:{pr:1,shadow:0,sd:45,grass:90,grad:3,bloom:false,crowd:.22,walkers:14,tn:240,trees:.55,npcDist:90,lodTree:95,lodCol:60,far:2600,shadowEvery:2,cube:64}};
+// placa de vídeo integrada (Intel de notebook, celulares): começa num nível que ela aguenta a 30 quadros por segundo
+const WEAK_GPU=(()=>{try{const c=document.createElement('canvas'),g=c.getContext('webgl')||c.getContext('experimental-webgl');if(!g)return false;const e=g.getExtension('WEBGL_debug_renderer_info'),nm=e?String(g.getParameter(e.UNMASKED_RENDERER_WEBGL)):'';
+  const lc=g.getExtension('WEBGL_lose_context');if(lc)lc.loseContext();return /Intel(?!.*Arc)|Mali|Adreno|PowerVR|SwiftShader|llvmpipe|Basic Render/i.test(nm);}catch(e){return false;}})();
 let QUALITY = 'alto';
 let GFX_AUTO = true;
 try { const q = localStorage.getItem('olimpia-gfx'); if (QCFG[q]) { QUALITY = q; GFX_AUTO = false; } } catch (e) {}
@@ -300,6 +303,7 @@ if (QUALITY === 'ultra' && IS_TOUCH) QUALITY = 'alto';
 if (GFX_AUTO) { const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const dm = navigator.deviceMemory, hc = navigator.hardwareConcurrency || 8;
   if (!iOS) { if ((dm && dm <= 2) || hc <= 2) QUALITY = 'baixo'; else if ((dm && dm <= 4) || hc <= 4) QUALITY = 'medio'; } }
+if (GFX_AUTO && WEAK_GPU) QUALITY = 'baixo';
 const QC0 = QCFG[QUALITY]; let QC = QC0;
 
 // ---------- utilidades ----------
@@ -331,7 +335,6 @@ try {
   throw e;
 }
 // resolução: no computador renderiza acima da tela (supersampling) quando a tela é comum
-let WEAK_GPU=false;try{const g0=renderer.getContext(),e0=g0.getExtension('WEBGL_debug_renderer_info'),nm=e0?String(g0.getParameter(e0.UNMASKED_RENDERER_WEBGL)):'';WEAK_GPU=/Intel(?!.*Arc)|Mali|Adreno|PowerVR|SwiftShader|llvmpipe|Basic Render/i.test(nm);}catch(e){}
 function targetPR(){const d=window.devicePixelRatio||1;if(WEAK_GPU)return Math.min(QC.pr,d);return Math.min(QC.pr,QUALITY==='ultra'?Math.max(d,2):QUALITY==='alto'&&!IS_TOUCH?Math.max(d,1.5):d);}
 const HIGHQ=()=>QUALITY==='alto'||QUALITY==='ultra';
 renderer.setPixelRatio(targetPR());
@@ -369,7 +372,7 @@ function mat(x,y,z,ry=0,sx=1,sy=1,sz=1,rx=0,rz=0){_e.set(rx,ry,rz,'YXZ');_q.setF
 
 // lote estático: tudo que não se mexe vira poucas malhas grandes, separadas por área (para o recorte de câmera funcionar)
 const STATIC = {};
-function addStatic(key,g,m){const e=m.elements;const cell=Math.floor((e[12]+700)/175)+'_'+Math.floor((e[14]+700)/175);const k=key+'|'+cell;(STATIC[k]||(STATIC[k]=[])).push({g,m});}
+function addStatic(key,g,m){const e=m.elements;const cell=Math.floor((e[12]+700)/350)+'_'+Math.floor((e[14]+700)/350);const k=key+'|'+cell;(STATIC[k]||(STATIC[k]=[])).push({g,m});}
 function finalizeStatic(){
   for(const k in STATIC){const key=k.split('|')[0];const geo=mergeGeos(STATIC[k],false);const mt=M[key];
     if(mt.userData.uvs)worldUV(geo,mt.userData.uvs[0],mt.userData.uvs[1]);
@@ -761,7 +764,9 @@ function finalizeColumns(){
   for(const L of LODS){L.x/=L.n;L.z/=L.n;}
 }
 function updateLODs(cp){for(const L of LODS){const d=Math.hypot(L.x-cp.x,L.z-cp.z);const near=d<(L.kind==='col'?QC.lodCol:QC.lodTree);
-  for(const m of L.hi)m.visible=near;for(const m of L.lo)m.visible=!near;}}
+  for(const m of L.hi)m.visible=near;for(const m of L.lo)m.visible=!near;
+  // nas malhas únicas de longe, as árvores do pedaço que está perto somem (a versão detalhada assume) e voltam quando ele se afasta
+  const F=L.far;if(F&&F.near!==near){F.near=near;for(const m of F.meshes){const a=m.instanceMatrix.array;if(near)a.fill(0,F.off*16,(F.off+F.n)*16);else a.set(F.mats,F.off*16);m.instanceMatrix.needsUpdate=true;}}}}
 
 // ---------- telhados de duas águas ----------
 function gableRoofX(cx,cz,len,wid,yb,rh,ped='pedBlue',acro=true){
@@ -1976,9 +1981,9 @@ function farGeo(src,cell){const A=src.attributes,ix=src.index&&src.index.array;i
 const BEASTS=[],FAR_K=[.02,.035,.07],FAR_GEO=new WeakMap();
 function beastLOD(cp){const f=renderer.getPixelRatio()*innerHeight/(2*Math.tan(camera.fov*Math.PI/360));let budget=2;
   for(const h of BEASTS){const g=h.g;if(!g.visible)continue;const p=g.position,d=Math.hypot(p.x-cp.x,p.y-cp.y,p.z-cp.z),r=h.geo0.boundingSphere.radius;
-    let lv=0;for(let i=0;i<3;i++)if(d>FAR_K[i]*r*g.scale.x*f/.6*(h.lv>i?1:1.12))lv=i+1;
+    const K=h.K||FAR_K;let lv=0;for(let i=0;i<K.length;i++)if(d>K[i]*r*g.scale.x*f/.6*(h.lv>i?1:1.12))lv=i+1;
     if(lv===h.lv)continue;let geo=h.geo0;
-    if(lv){let F=FAR_GEO.get(h.geo0);if(!F)FAR_GEO.set(h.geo0,F=[]);geo=F[lv];if(!geo){if(budget--<=0)continue;geo=F[lv]=farGeo(h.geo0,FAR_K[lv-1]*r);}}
+    if(lv){let F=FAR_GEO.get(h.geo0);if(!F)FAR_GEO.set(h.geo0,F=[]);geo=F[lv];if(!geo){if(budget--<=0)continue;geo=F[lv]=farGeo(h.geo0,K[lv-1]*r);}}
     h.mesh.geometry=geo;h.lv=lv;}}
 class Horse{
   constructor(lite=null,beast=null){const ck=geoKey(lite?{cavalo:5,biga:1}:{cavalo:5},'horse'),dd=beast?null:GC.mem.get(ck);let geo=beast?beast.geo:lite?Horse.lg:null;this.J=beast?beast.J:HJ;
@@ -2219,13 +2224,17 @@ function addTree(type,x,z,s=1,collide=true){const y=terrainAt(x,z);TREES[type].l
   mapCirc(x,z,(type==='plane'?3.2:type==='pine'?2.6:type==='olive'?1.8:type==='shrub'?.9:1.1)*s,'tree');}
 function finalizeTrees(){const CELL=120;
   for(const k in TREES){const t=TREES[k];const cells={};for(const p of t.list){const c=Math.floor(p[0]/CELL)+'_'+Math.floor(p[2]/CELL);(cells[c]||(cells[c]=[])).push(p);}
-    for(const c in cells){const list=cells[c],n=list.length;const L={x:0,z:0,hi:[],lo:[],kind:'tree'};LODS.push(L);
-      const meshes={hiT:new T.InstancedMesh(t.hiT,BARK,n),hiL:new T.InstancedMesh(t.hiL,t.lm,n),loT:new T.InstancedMesh(t.loT,BARK,n),loL:new T.InstancedMesh(t.loL,t.lm,n)};
-      meshes.hiL.customDepthMaterial=t.lm.userData.depth;meshes.loL.customDepthMaterial=t.lm.userData.depth;const col=new T.Color(),lc=new T.Color();
-      list.forEach((p,i)=>{const m=mat(p[0],p[1],p[2],p[4],p[3],p[3]*(.9+((i*37)%7)/30),p[3]);for(const key in meshes)meshes[key].setMatrixAt(i,m);
+    // árvores de longe: uma malha só por espécie para o mapa inteiro (1 chamada à placa de vídeo em vez de uma por pedaço do mapa)
+    const N=t.list.length;if(!N)continue;const loT=new T.InstancedMesh(t.loT,BARK,N),loL=new T.InstancedMesh(t.loL,t.lm,N);loL.customDepthMaterial=t.lm.userData.depth;let off=0;
+    for(const c in cells){const list=cells[c],n=list.length;const L={x:0,z:0,hi:[],lo:[],kind:'tree',far:{meshes:[loT,loL],off,n,mats:new Float32Array(n*16),near:false}};LODS.push(L);
+      const meshes={hiT:new T.InstancedMesh(t.hiT,BARK,n),hiL:new T.InstancedMesh(t.hiL,t.lm,n)};
+      meshes.hiL.customDepthMaterial=t.lm.userData.depth;const col=new T.Color();
+      list.forEach((p,i)=>{const m=mat(p[0],p[1],p[2],p[4],p[3],p[3]*(.9+((i*37)%7)/30),p[3]);for(const key in meshes)meshes[key].setMatrixAt(i,m);loT.setMatrixAt(off+i,m);loL.setMatrixAt(off+i,m);m.toArray(L.far.mats,i*16);
         col.copy(t.cols[i%t.cols.length]).multiplyScalar(.88+((i*13)%10)/50);meshes.hiL.setColorAt(i,col);
-        meshes.loL.setColorAt(i,col);L.x+=p[0]/n;L.z+=p[2]/n;});
-      for(const key in meshes){const m=meshes[key];m.layers.enable(1);m.castShadow=true;m.receiveShadow=true;m.computeBoundingSphere();scene.add(m);L[key.startsWith('hi')?'hi':'lo'].push(m);}}}
+        loL.setColorAt(off+i,col);L.x+=p[0]/n;L.z+=p[2]/n;});
+      for(const key in meshes){const m=meshes[key];m.layers.enable(1);m.castShadow=true;m.receiveShadow=true;m.computeBoundingSphere();scene.add(m);L.hi.push(m);}
+      off+=n;}
+    for(const m of [loT,loL]){m.layers.enable(1);m.castShadow=true;m.receiveShadow=true;m.frustumCulled=false;scene.add(m);}}
 }
 function freeSpot(x,z,m){const h=terrainAt(x,z);if(h<-.3)return false;if(groundAt(x,z)>h+.05)return false;
   for(const r of RESERVE)if(x>r[0]-m&&x<r[1]+m&&z>r[2]-m&&z<r[3]+m)return false;
@@ -2611,7 +2620,7 @@ function buildFires(){
   FIRE.outer=new T.InstancedMesh(cone,new T.MeshBasicMaterial({color:'#ff7a22',transparent:true,opacity:.85,blending:T.AdditiveBlending,depthWrite:false}),n);
   FIRE.inner=new T.InstancedMesh(cone,new T.MeshBasicMaterial({color:'#ffd27a',transparent:true,opacity:.9,blending:T.AdditiveBlending,depthWrite:false}),n);
   for(const m of [FIRE.outer,FIRE.inner]){m.frustumCulled=false;scene.add(m);}
-  FIRE.lights=[];for(let i=0;i<3;i++){const l=new T.PointLight(0xff9b4a,0,26,1.6);scene.add(l);FIRE.lights.push(l);}
+  FIRE.lights=[];for(let i=0;i<(WEAK_GPU?1:3);i++){const l=new T.PointLight(0xff9b4a,0,26,1.6);scene.add(l);FIRE.lights.push(l);}
   FIRE.zeus=new T.PointLight(0xffc985,30,40,1.4);FIRE.zeus.position.set(ZEUS_CELLA.x0+17,ZEUS_CELLA.y+6,22);scene.add(FIRE.zeus);
   FIRE.acc=0;
 }
@@ -3345,7 +3354,8 @@ const GW=(m,f)=>PLAYER.ch&&PLAYER.ch.female?f:m;
 const HERO_SHADOW=new WeakMap(),SHADOW_ONLY=new T.MeshBasicMaterial({colorWrite:false,depthWrite:false});
 function makePlayer(id){id=id||S.char||'eduardo';if(!CHARS[id])id='eduardo';S.char=id;const ch=CHARS[id];PLAYER.ch=ch;PLAYER_NAME=ch.name;
   const o=Object.assign({},ch.o);if(PLAYER.h){scene.remove(PLAYER.h.g);const og=PLAYER.h.mesh.geometry;if(JSON.stringify(PLAYER.o)!==JSON.stringify(o)){for(const k in _hgeo)if(_hgeo[k]===og)delete _hgeo[k];og.dispose();}}PLAYER.o=o;PLAYER.h=new Human(o,null,'hero');PLAYER.h.mesh.layers.enable(2);scene.add(PLAYER.h.g);
-  {const hm=PLAYER.h.mesh,src=hm.geometry,fg=HERO_SHADOW.get(src)||farGeo(src,.012);HERO_SHADOW.set(src,fg);const sp=new T.SkinnedMesh(fg,SHADOW_ONLY);sp.bind(hm.skeleton,hm.bindMatrix);sp.castShadow=true;sp.boundingSphere=hm.boundingSphere;hm.castShadow=false;PLAYER.h.g.add(sp);PLAYER.h.shadowMesh=sp;}
+  {const hm=PLAYER.h.mesh,src=hm.geometry,fg=HERO_SHADOW.get(src)||farGeo(src,.012);HERO_SHADOW.set(src,fg);const sp=new T.SkinnedMesh(fg,SHADOW_ONLY);sp.bind(hm.skeleton,hm.bindMatrix);sp.castShadow=true;sp.boundingSphere=hm.boundingSphere;hm.castShadow=false;sp.visible=QC.shadow>0;PLAYER.h.g.add(sp);PLAYER.h.shadowMesh=sp;
+    for(let i=BEASTS.length-1;i>=0;i--)if(BEASTS[i].hero)BEASTS.splice(i,1);BEASTS.push({hero:true,g:PLAYER.h.g,mesh:hm,geo0:src,lv:0,K:[.0024,.0048,.008,.016]});}
   const sw=makeSword(ch.sword);sw.position.set(0,-.07,.014);sw.rotation.set(1.3,0,0);PLAYER.h.bones.haR.add(sw);PLAYER.sword=sw;
   document.querySelectorAll('.char').forEach(b=>{const on=b.dataset.id===id;b.classList.toggle('on',on);b.setAttribute('aria-checked',String(on));});
   const ci=$('charInfo');if(ci)ci.textContent=ch.info;const bc=$('bChar');if(bc)bc.textContent='Personagem: '+ch.name;}
@@ -3689,7 +3699,8 @@ const QNAME={ultra:'ultra',alto:'alto',medio:'médio',baixo:'baixo'};
 function applyQuality(){QC=QCFG[QUALITY];DYN.pr=targetPR();DYN.probe=0;DYN.bad=0;DYN.hold=0;DYN.ceil=0;DYN.wasUp=false;renderer.setPixelRatio(DYN.pr);renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled=QC.shadow>0;sun.castShadow=QC.shadow>0;setShadowCfg();camera.far=QC.far;camera.updateProjectionMatrix();
   scene.traverse(o=>{if(o.material)[].concat(o.material).forEach(m=>m.needsUpdate=true);});
-  setGrassDensity();updateGrass(PLAYER.pos.x,PLAYER.pos.z,true);setPointScale();setupComposer();$('bGfx').textContent='Gráficos: '+QNAME[QUALITY];}
+  setGrassDensity();updateGrass(PLAYER.pos.x,PLAYER.pos.z,true);BLADE.per=QC.blades||0;BLADE.cache.clear();if(BLADE.mesh){BLADE.mesh.visible=BLADE.per>0;updateBlades(PLAYER.pos.x,PLAYER.pos.z,true);}
+  if(PLAYER.h&&PLAYER.h.shadowMesh)PLAYER.h.shadowMesh.visible=QC.shadow>0;setPointScale();setupComposer();$('bGfx').textContent='Gráficos: '+QNAME[QUALITY];}
 $('bGfx').onclick=()=>{GFX_AUTO=false;QUALITY=(IS_TOUCH?{alto:'medio',medio:'baixo',baixo:'alto'}:{ultra:'alto',alto:'medio',medio:'baixo',baixo:'ultra'})[QUALITY]||'alto';applyQuality();try{localStorage.setItem('olimpia-gfx',QUALITY);}catch(e){}};
 addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();setPointScale();if(COMPOSER)COMPOSER.setSize(innerWidth,innerHeight);});
 

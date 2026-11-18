@@ -286,16 +286,16 @@ const T = THREE;
 const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
 // quatro níveis: ultra (computador forte), alto, medio (celular), baixo (aparelho fraco)
 const QCFG={
-  ultra:{pr:2.5,shadow:4096,sd:100,blades:1800,grass:640,grad:5,bloom:true,crowd:.8,walkers:46,tn:400,trees:1,npcDist:230,lodTree:460,lodCol:230,far:5200,shadowEvery:1,cube:256},
-  alto:IS_TOUCH?{pr:2.5,shadow:2048,sd:55,blades:650,grass:340,grad:3,bloom:true,crowd:.4,walkers:24,tn:320,trees:.8,npcDist:120,lodTree:150,lodCol:100,far:3200,shadowEvery:2,cube:128}
-              :{pr:2,shadow:4096,sd:80,blades:1300,grass:560,grad:4,bloom:true,crowd:.6,walkers:34,tn:400,trees:1,npcDist:170,lodTree:300,lodCol:150,far:4000,shadowEvery:1,cube:256},
+  ultra:{pr:1.5,shadow:2048,sd:100,blades:1200,grass:480,grad:4,bloom:true,crowd:.7,walkers:40,tn:400,trees:1,npcDist:200,lodTree:380,lodCol:200,far:4800,shadowEvery:2,cube:128},
+  alto:IS_TOUCH?{pr:1.5,shadow:2048,sd:55,blades:650,grass:340,grad:3,bloom:true,crowd:.4,walkers:24,tn:320,trees:.8,npcDist:120,lodTree:150,lodCol:100,far:3200,shadowEvery:2,cube:128}
+              :{pr:1.25,shadow:2048,sd:70,blades:900,grass:420,grad:4,bloom:true,crowd:.5,walkers:30,tn:400,trees:1,npcDist:150,lodTree:260,lodCol:130,far:3600,shadowEvery:2,cube:128},
   medio:{pr:1.5,shadow:2048,sd:55,blades:350,grass:190,grad:3,bloom:false,crowd:.35,walkers:22,tn:320,trees:.75,npcDist:120,lodTree:140,lodCol:90,far:3200,shadowEvery:2,cube:128},
   baixo:{pr:1,shadow:0,sd:45,grass:90,grad:3,bloom:false,crowd:.22,walkers:14,tn:240,trees:.55,npcDist:90,lodTree:95,lodCol:60,far:2600,shadowEvery:2,cube:64}};
 let QUALITY = 'alto';
 let GFX_AUTO = true;
 try { const q = localStorage.getItem('olimpia-gfx'); if (QCFG[q]) { QUALITY = q; GFX_AUTO = false; } } catch (e) {}
 // primeiro acesso num Android fraco (pouca memória ou poucos núcleos): já começa no médio ou no baixo; no iPhone o jogo mede o desempenho e ajusta sozinho
-if (GFX_AUTO && !IS_TOUCH && !/iPhone|iPad|iPod|Android/.test(navigator.userAgent) && (navigator.hardwareConcurrency||8) >= 6 && !(navigator.deviceMemory && navigator.deviceMemory < 8)) QUALITY = 'ultra';
+if (GFX_AUTO && !IS_TOUCH && !/iPhone|iPad|iPod|Android/.test(navigator.userAgent) && (navigator.hardwareConcurrency||8) >= 6 && !(navigator.deviceMemory && navigator.deviceMemory < 8)) QUALITY = 'alto';
 if (QUALITY === 'ultra' && IS_TOUCH) QUALITY = 'alto';
 if (GFX_AUTO) { const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const dm = navigator.deviceMemory, hc = navigator.hardwareConcurrency || 8;
@@ -331,7 +331,7 @@ try {
   throw e;
 }
 // resolução: no computador renderiza acima da tela (supersampling) quando a tela é comum
-function targetPR(){const d=window.devicePixelRatio||1;return Math.min(QC.pr,QUALITY==='ultra'?Math.max(d,2):QUALITY==='alto'&&!IS_TOUCH?Math.max(d,1.5):d);}
+function targetPR(){const d=window.devicePixelRatio||1;return Math.min(QC.pr,d);}
 const HIGHQ=()=>QUALITY==='alto'||QUALITY==='ultra';
 renderer.setPixelRatio(targetPR());
 renderer.setSize(innerWidth, innerHeight);
@@ -3660,7 +3660,7 @@ const GRADE={uniforms:{tDiffuse:{value:null},uSat:{value:1.28},uCon:{value:1.08}
   vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
   fragmentShader:'uniform sampler2D tDiffuse;uniform float uSat,uCon,uWarm;varying vec2 vUv;void main(){vec4 c=texture2D(tDiffuse,vUv);float l=dot(c.rgb,vec3(.2126,.7152,.0722));vec3 r=mix(vec3(l),c.rgb,uSat);r=(r-.5)*uCon+.5;r+=vec3(uWarm,uWarm*.4,-uWarm);gl_FragColor=vec4(clamp(r,0.,1.),c.a);}'};
 function setupComposer(){GRADE_PASS=null;if(COMPOSER){COMPOSER.renderTarget1.dispose();COMPOSER.renderTarget2.dispose();COMPOSER=null;}if(QUALITY==='baixo')return;
-  const pr=renderer.getPixelRatio();const rt=new T.WebGLRenderTarget(innerWidth*pr,innerHeight*pr,{type:T.HalfFloatType,samples:(QUALITY==='alto'||QUALITY==='ultra')&&!IS_TOUCH?8:4});
+  const pr=renderer.getPixelRatio();const rt=new T.WebGLRenderTarget(innerWidth*pr,innerHeight*pr,{type:T.HalfFloatType,samples:(QUALITY==='alto'||QUALITY==='ultra')&&!IS_TOUCH?4:2});
   COMPOSER=new EffectComposer(renderer,rt);COMPOSER.addPass(new RenderPass(scene,camera));
   if(QC.bloom)COMPOSER.addPass(new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),.32,.5,.88));COMPOSER.addPass(new OutputPass());COMPOSER.addPass(GRADE_PASS=new ShaderPass(GRADE));}
 function draw(){if(COMPOSER)COMPOSER.render();else renderer.render(scene,camera);}
@@ -3727,11 +3727,15 @@ function gfxNote(t){let el=$('gfxNote');if(!el){el=document.createElement('div')
 function autoGfx(fps,max){if(!GFX_AUTO||!STARTED||document.hidden)return;if(fps<24&&DYN.pr<=max*.5+.01)DYN.low=(DYN.low||0)+1;else DYN.low=0;
   if(DYN.low>=3&&QUALITY!=='baixo'){DYN.low=0;QUALITY=QUALITY==='ultra'?'alto':QUALITY==='alto'?'medio':'baixo';applyQuality();gfxNote('Gráficos ajustados para '+QNAME[QUALITY]+' para o jogo rodar liso neste aparelho');}}
 function dynRes(realDt){DYN.t+=realDt;DYN.n++;if(DYN.t<1.5)return;const fps=DYN.n/DYN.t;DYN.t=0;DYN.n=0;const max=targetPR();let pr=DYN.pr;autoGfx(fps,max);
-  if(fps<40&&pr>max*.5)pr=Math.max(max*.5,pr*.85);else if(fps>57&&pr<max)pr=Math.min(max,pr*1.1);else return;
+  if(fps<FPS_CAP*.9&&pr>max*.5)pr=Math.max(max*.5,pr*.85);else if(fps>FPS_CAP*.97&&pr<max)pr=Math.min(max,pr*1.1);else return;
   if(Math.abs(pr-DYN.pr)<.01)return;DYN.pr=pr;renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight);if(COMPOSER){COMPOSER.setPixelRatio(pr);COMPOSER.setSize(innerWidth,innerHeight);}setPointScale();}
 // ---------- laço principal ----------
 let last=performance.now(),TT=0,acc10=0,acc4=0,acc2=0;const FOCUS=new T.Vector3();
-function frame(now){requestAnimationFrame(frame);if(window.__pause){last=now;return;}const rdt=Math.max(0,(now-last)/1000);let dt=Math.min(.05,rdt);if(HITSTOP>0){HITSTOP-=rdt;dt*=.1;}last=now;tick(dt);if(STARTED)dynRes(rdt);if(STARTED||FR%3===0)updateReflections();
+// limite de quadros: o jogo roda a 30 FPS (igual em telas de 60, 120 ou 144 Hz)
+const FPS_CAP=30,FRAME_MS=1000/FPS_CAP;let nextFrameT=0;
+function frame(now){requestAnimationFrame(frame);if(window.__pause){last=now;return;}
+  if(now<nextFrameT-1)return;nextFrameT=(nextFrameT===0||now-nextFrameT>FRAME_MS)?now+FRAME_MS:nextFrameT+FRAME_MS;
+  const rdt=Math.max(0,(now-last)/1000);let dt=Math.min(.05,rdt);if(HITSTOP>0){HITSTOP-=rdt;dt*=.1;}last=now;tick(dt);if(STARTED)dynRes(rdt);if(FR%4===0)updateReflections();
   FR++;if(QC.shadowEvery>1){renderer.shadowMap.autoUpdate=false;if(FR%QC.shadowEvery===0)renderer.shadowMap.needsUpdate=true;}else renderer.shadowMap.autoUpdate=true;draw();}
 let FR=0;
 window.__KEY=KEY;window.__step=(n,dt=.05)=>{for(let i=0;i<n;i++)tick(dt);};

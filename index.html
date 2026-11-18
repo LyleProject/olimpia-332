@@ -286,9 +286,9 @@ const T = THREE;
 const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
 // quatro níveis: ultra (computador forte), alto, medio (celular), baixo (aparelho fraco)
 const QCFG={
-  ultra:{pr:1.5,shadow:2048,sd:100,blades:1200,grass:480,grad:4,bloom:true,crowd:.7,walkers:40,tn:400,trees:1,npcDist:200,lodTree:380,lodCol:200,far:4800,shadowEvery:2,cube:128},
-  alto:IS_TOUCH?{pr:1.5,shadow:2048,sd:55,blades:650,grass:340,grad:3,bloom:true,crowd:.4,walkers:24,tn:320,trees:.8,npcDist:120,lodTree:150,lodCol:100,far:3200,shadowEvery:2,cube:128}
-              :{pr:1.25,shadow:2048,sd:70,blades:900,grass:420,grad:4,bloom:true,crowd:.5,walkers:30,tn:400,trees:1,npcDist:150,lodTree:260,lodCol:130,far:3600,shadowEvery:2,cube:128},
+  ultra:{pr:2.5,shadow:4096,sd:100,blades:1800,grass:640,grad:5,bloom:true,crowd:.8,walkers:46,tn:400,trees:1,npcDist:230,lodTree:460,lodCol:230,far:5200,shadowEvery:1,cube:256},
+  alto:IS_TOUCH?{pr:2.5,shadow:2048,sd:55,blades:650,grass:340,grad:3,bloom:true,crowd:.4,walkers:24,tn:320,trees:.8,npcDist:120,lodTree:150,lodCol:100,far:3200,shadowEvery:2,cube:128}
+              :{pr:2,shadow:4096,sd:80,blades:1300,grass:560,grad:4,bloom:true,crowd:.6,walkers:34,tn:400,trees:1,npcDist:170,lodTree:300,lodCol:150,far:4000,shadowEvery:1,cube:256},
   medio:{pr:1.5,shadow:2048,sd:55,blades:350,grass:190,grad:3,bloom:false,crowd:.35,walkers:22,tn:320,trees:.75,npcDist:120,lodTree:140,lodCol:90,far:3200,shadowEvery:2,cube:128},
   baixo:{pr:1,shadow:0,sd:45,grass:90,grad:3,bloom:false,crowd:.22,walkers:14,tn:240,trees:.55,npcDist:90,lodTree:95,lodCol:60,far:2600,shadowEvery:2,cube:64}};
 let QUALITY = 'alto';
@@ -331,7 +331,8 @@ try {
   throw e;
 }
 // resolução: no computador renderiza acima da tela (supersampling) quando a tela é comum
-function targetPR(){const d=window.devicePixelRatio||1;return Math.min(QC.pr,d);}
+let WEAK_GPU=false;try{const g0=renderer.getContext(),e0=g0.getExtension('WEBGL_debug_renderer_info'),nm=e0?String(g0.getParameter(e0.UNMASKED_RENDERER_WEBGL)):'';WEAK_GPU=/Intel(?!.*Arc)|Mali|Adreno|PowerVR|SwiftShader|llvmpipe|Basic Render/i.test(nm);}catch(e){}
+function targetPR(){const d=window.devicePixelRatio||1;if(WEAK_GPU)return Math.min(QC.pr,d);return Math.min(QC.pr,QUALITY==='ultra'?Math.max(d,2):QUALITY==='alto'&&!IS_TOUCH?Math.max(d,1.5):d);}
 const HIGHQ=()=>QUALITY==='alto'||QUALITY==='ultra';
 renderer.setPixelRatio(targetPR());
 renderer.setSize(innerWidth, innerHeight);
@@ -509,7 +510,7 @@ function buildTerrain(){
   const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(pos,3));g.setAttribute('color',new T.BufferAttribute(col,3));
   g.setAttribute('uv',new T.BufferAttribute(uv,2));g.setIndex(new T.BufferAttribute(idx,1));g.computeVertexNormals();
   const m=new T.MeshStandardMaterial({vertexColors:true,map:TEX.ground.map,normalMap:TEX.ground.normal,normalScale:new T.Vector2(.9,.9),roughness:1,envMapIntensity:.45});
-  terrainMesh=new T.Mesh(g,m);terrainMesh.receiveShadow=true;terrainMesh.layers.enable(1);scene.add(terrainMesh);
+  terrainMesh=new T.Mesh(g,m);terrainMesh.receiveShadow=true;terrainMesh.renderOrder=5;terrainMesh.layers.enable(1);scene.add(terrainMesh);
 }
 
 // ---------- água ----------
@@ -560,7 +561,7 @@ function buildSky(){
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }`});
-  skyMesh=new T.Mesh(new T.SphereGeometry(2000,32,16),m);skyMesh.renderOrder=-1;skyMesh.frustumCulled=false;skyMesh.layers.enable(1);scene.add(skyMesh);
+  skyMesh=new T.Mesh(new T.SphereGeometry(2000,32,16),m);skyMesh.renderOrder=10;skyMesh.frustumCulled=false;skyMesh.layers.enable(1);scene.add(skyMesh);
   // duas fileiras de montanhas da Arcádia e da Élida ao longe
   for(const [r,amp,base,shade] of [[1750,240,40,.55],[1300,150,10,.75]]){
     const N=180,pos=[],idx=[];
@@ -1962,6 +1963,23 @@ const _HLM={};
 function HORSE_LITE(coat){if(_HLM[coat])return _HLM[coat];const m=[new T.MeshStandardMaterial({vertexColors:true,color:new T.Color(coat),roughness:.55,envMapIntensity:.6}),
   new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide,envMapIntensity:.4}),new T.MeshStandardMaterial({vertexColors:true,roughness:.55,envMapIntensity:.5}),
   new T.MeshStandardMaterial({vertexColors:true}),new T.MeshStandardMaterial({vertexColors:true,roughness:.1,envMapIntensity:1})];return _HLM[coat]=m;}
+// ---------- versões leves para longe ----------
+// junta os vértices que cairiam no mesmo ponto da tela (grade de "cell" metros): de longe a imagem é a mesma, com uma fração dos triângulos
+function farGeo(src,cell){const A=src.attributes,ix=src.index&&src.index.array;if(!ix)return src;const P=A.position.array,nv=A.position.count,inv=1/cell,map=new Map(),remap=new Uint32Array(nv),rp=[];
+  for(let i=0;i<nv;i++){const k=((Math.floor(P[i*3]*inv)+512)*1024+Math.floor(P[i*3+1]*inv)+512)*1024+Math.floor(P[i*3+2]*inv)+512;let j=map.get(k);if(j===undefined){j=rp.length;map.set(k,j);rp.push(i);}remap[i]=j;}
+  const n2=rp.length,g=new T.BufferGeometry();
+  for(const nm in A){const a=A[nm],sz=a.itemSize,sa=a.array,d=new sa.constructor(n2*sz);for(let j=0;j<n2;j++){const o=rp[j]*sz;for(let c=0;c<sz;c++)d[j*sz+c]=sa[o+c];}g.setAttribute(nm,new T.BufferAttribute(d,sz,a.normalized));}
+  const out=[],G=src.groups.length?src.groups:[{start:0,count:ix.length,materialIndex:0}];
+  for(const q of G){const s0=out.length,e=Math.min(ix.length,q.start+q.count);for(let t=q.start;t+2<e;t+=3){const a=remap[ix[t]],b=remap[ix[t+1]],c=remap[ix[t+2]];if(a!==b&&b!==c&&a!==c)out.push(a,b,c);}if(src.groups.length)g.addGroup(s0,out.length-s0,q.materialIndex);}
+  g.setIndex(new T.BufferAttribute(n2>65535?new Uint32Array(out):new Uint16Array(out),1));g.boundingSphere=src.boundingSphere;return g;}
+// cada bicho troca de malha conforme o tamanho na tela: a grade é sempre menor que ~0,6 pixel, então a troca não aparece
+const BEASTS=[],FAR_K=[.02,.035,.07],FAR_GEO=new WeakMap();
+function beastLOD(cp){const f=renderer.getPixelRatio()*innerHeight/(2*Math.tan(camera.fov*Math.PI/360));let budget=2;
+  for(const h of BEASTS){const g=h.g;if(!g.visible)continue;const p=g.position,d=Math.hypot(p.x-cp.x,p.y-cp.y,p.z-cp.z),r=h.geo0.boundingSphere.radius;
+    let lv=0;for(let i=0;i<3;i++)if(d>FAR_K[i]*r*g.scale.x*f/.6*(h.lv>i?1:1.12))lv=i+1;
+    if(lv===h.lv)continue;let geo=h.geo0;
+    if(lv){let F=FAR_GEO.get(h.geo0);if(!F)FAR_GEO.set(h.geo0,F=[]);geo=F[lv];if(!geo){if(budget--<=0)continue;geo=F[lv]=farGeo(h.geo0,FAR_K[lv-1]*r);}}
+    h.mesh.geometry=geo;h.lv=lv;}}
 class Horse{
   constructor(lite=null,beast=null){const ck=geoKey(lite?{cavalo:5,biga:1}:{cavalo:5},'horse'),dd=beast?null:GC.mem.get(ck);let geo=beast?beast.geo:lite?Horse.lg:null;this.J=beast?beast.J:HJ;
     if(geo){}else if(dd){geo=geoUnpack(dd);geo.userData.seat=dd.seat;geo.boundingSphere=new T.Sphere(new T.Vector3(0,1.1,.2),1.6);GC.mem.delete(ck);}
@@ -1970,7 +1988,7 @@ class Horse{
     this.seat=geo.userData.seat;this.bones={};const list=[],J=this.J;
     for(const b of HB_NAMES){const bone=new T.Bone();const p=J[b],pp=HPAR[b]?J[HPAR[b]]:[0,0,0];bone.position.set(p[0]-pp[0],p[1]-pp[1],p[2]-pp[2]);this.bones[b]=bone;list.push(bone);if(HPAR[b])this.bones[HPAR[b]].add(bone);}
     this.mesh=new T.SkinnedMesh(geo,beast?beast.mat:lite?HORSE_LITE(lite):HORSE_MATS());this.mesh.add(this.bones.root);this.mesh.updateMatrixWorld(true);this.mesh.bind(new T.Skeleton(list),this.mesh.matrixWorld);
-    this.mesh.castShadow=true;this.mesh.receiveShadow=!lite&&!beast;this.mesh.frustumCulled=!!(lite||beast);if(beast)this.mesh.boundingSphere=geo.boundingSphere;else if(lite)this.mesh.boundingSphere=new T.Sphere(new T.Vector3(0,1.1,.2),1.9);this.g=new T.Group();this.g.add(this.mesh);scene.add(this.g);
+    this.mesh.castShadow=true;this.mesh.receiveShadow=!lite&&!beast;this.mesh.frustumCulled=true;this.mesh.boundingSphere=beast?geo.boundingSphere:new T.Sphere(new T.Vector3(0,1.1,.2),lite?1.9:2.5);this.geo0=geo;this.lv=0;BEASTS.push(this);this.g=new T.Group();this.g.add(this.mesh);scene.add(this.g);
     this.ph=0;this.gait='parado';this.tail=0;this.tailV=0;this.idleT=0;this.legPh={};this.last={};}
   // andadura pela velocidade; cada pata tem sua fase (deslocamento) e fração de apoio no chão
   pose(speed,dt,turn=0,air=0){const B=this.bones;for(const b of HB_NAMES)B[b].rotation.set(0,0,0);B.root.position.set(...this.J.root);
@@ -2549,13 +2567,14 @@ function buildChariots(){
     {g:cylGeo(1,5),m:mat(0,.55,-.05,0,.04,1.3,.04,0,Math.PI/2),c:W},{g:GB,m:mat(0,.75,2.0,0,.07,.07,3.4),c:W},{g:GB,m:mat(0,1.32,.4,0,1.02,.05,.08),c:Gd}],true);
   const colors=[['#f2ece0','#8e2b1c'],['#f2ece0','#2f4f7f'],['#f2ece0','#6f7d3c'],['#f2ece0','#a8853f']];
   for(let i=0;i<4;i++){const m=new T.Mesh(cg,HUMAN_MAT);m.castShadow=true;scene.add(m);
-    const o=outfit('charioteer');o.trim=colors[i][1];const h=new Human(o);scene.add(h.g);
+    const o=outfit('charioteer');o.trim=colors[i][1];const h=new Human(o,undefined,'lo');scene.add(h.g);
     CHAR.list.push({m,h,s:i*45,off:-6+i*4,v:14+i*.4,ph:rnd(0,6)});}
 }
 function updateChariots(dt,t){
   CHAR.list.forEach((c,i)=>{c.v=14.2+Math.sin(t*.23+i*1.7)*1.6+Math.sin(t*.07+i)*1.0;c.s+=c.v*dt;c.ph+=dt*c.v*.75;
     const [x,z,dx,dz]=ovalPoint(c.s,c.off);const y=terrainAt(x,z),hd=Math.atan2(dx,dz);
     c.m.position.set(x,y,z);c.m.rotation.y=hd;c.h.g.position.set(x-dx*.05,y+.6,z-dz*.05);c.h.g.rotation.y=hd;if(inView(x,y+1.5,z,4))c.h.pose('reins',c.ph);
+    {const cq=camera.position,dq=(x-cq.x)**2+(z-cq.z)**2,wq=dq<22*22?'hi':dq<55*55?'mid':'lo';if(wq!==c.h.lod)c.h.setLOD(wq);c.h.mesh.castShadow=dq<60*60;}
     const vis=inView(x,y+1.5,z,9);
     for(let k=0;k<4;k++){const lat=-1.5+k*.98;const [hx,hz,hdx,hdz]=ovalPoint(c.s+4.1,c.off+lat);const H=CHAR.horses[i*4+k],ny=Math.atan2(hdx,hdz);
       let tr=ny-(H.yaw??ny);tr=Math.atan2(Math.sin(tr),Math.cos(tr))/Math.max(dt,1e-3);H.yaw=ny;
@@ -3323,8 +3342,10 @@ const CHARS={
     o:{skin:'#9c6a46',hair:'#1a120c',cloth:'#2d6a3a',robe:'short',armor:true,sculpt:true,sdf:true,beard:false,muscle:.7,eyes:'#3b2a1a',h:1.36,variant:'child',headScale:1.2,emblem:'sun',cape:'#2d6a3a',kilt:'#2d6a3a',crest:'#e8b52a',crestH:.85,shieldR:.36,spear:false}}};
 const CHAR_ORDER=['eduardo','laufey','atumalaka'];
 const GW=(m,f)=>PLAYER.ch&&PLAYER.ch.female?f:m;
+const HERO_SHADOW=new WeakMap(),SHADOW_ONLY=new T.MeshBasicMaterial({colorWrite:false,depthWrite:false});
 function makePlayer(id){id=id||S.char||'eduardo';if(!CHARS[id])id='eduardo';S.char=id;const ch=CHARS[id];PLAYER.ch=ch;PLAYER_NAME=ch.name;
   const o=Object.assign({},ch.o);if(PLAYER.h){scene.remove(PLAYER.h.g);const og=PLAYER.h.mesh.geometry;if(JSON.stringify(PLAYER.o)!==JSON.stringify(o)){for(const k in _hgeo)if(_hgeo[k]===og)delete _hgeo[k];og.dispose();}}PLAYER.o=o;PLAYER.h=new Human(o,null,'hero');PLAYER.h.mesh.layers.enable(2);scene.add(PLAYER.h.g);
+  {const hm=PLAYER.h.mesh,src=hm.geometry,fg=HERO_SHADOW.get(src)||farGeo(src,.012);HERO_SHADOW.set(src,fg);const sp=new T.SkinnedMesh(fg,SHADOW_ONLY);sp.bind(hm.skeleton,hm.bindMatrix);sp.castShadow=true;sp.boundingSphere=hm.boundingSphere;hm.castShadow=false;PLAYER.h.g.add(sp);PLAYER.h.shadowMesh=sp;}
   const sw=makeSword(ch.sword);sw.position.set(0,-.07,.014);sw.rotation.set(1.3,0,0);PLAYER.h.bones.haR.add(sw);PLAYER.sword=sw;
   document.querySelectorAll('.char').forEach(b=>{const on=b.dataset.id===id;b.classList.toggle('on',on);b.setAttribute('aria-checked',String(on));});
   const ci=$('charInfo');if(ci)ci.textContent=ch.info;const bc=$('bChar');if(bc)bc.textContent='Personagem: '+ch.name;}
@@ -3660,16 +3681,16 @@ const GRADE={uniforms:{tDiffuse:{value:null},uSat:{value:1.28},uCon:{value:1.08}
   vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
   fragmentShader:'uniform sampler2D tDiffuse;uniform float uSat,uCon,uWarm;varying vec2 vUv;void main(){vec4 c=texture2D(tDiffuse,vUv);float l=dot(c.rgb,vec3(.2126,.7152,.0722));vec3 r=mix(vec3(l),c.rgb,uSat);r=(r-.5)*uCon+.5;r+=vec3(uWarm,uWarm*.4,-uWarm);gl_FragColor=vec4(clamp(r,0.,1.),c.a);}'};
 function setupComposer(){GRADE_PASS=null;if(COMPOSER){COMPOSER.renderTarget1.dispose();COMPOSER.renderTarget2.dispose();COMPOSER=null;}if(QUALITY==='baixo')return;
-  const pr=renderer.getPixelRatio();const rt=new T.WebGLRenderTarget(innerWidth*pr,innerHeight*pr,{type:T.HalfFloatType,samples:(QUALITY==='alto'||QUALITY==='ultra')&&!IS_TOUCH?4:2});
+  const pr=renderer.getPixelRatio();const rt=new T.WebGLRenderTarget(innerWidth*pr,innerHeight*pr,{type:T.HalfFloatType,samples:(QUALITY==='alto'||QUALITY==='ultra')&&!IS_TOUCH&&!WEAK_GPU?8:4});
   COMPOSER=new EffectComposer(renderer,rt);COMPOSER.addPass(new RenderPass(scene,camera));
   if(QC.bloom)COMPOSER.addPass(new UnrealBloomPass(new T.Vector2(innerWidth,innerHeight),.32,.5,.88));COMPOSER.addPass(new OutputPass());COMPOSER.addPass(GRADE_PASS=new ShaderPass(GRADE));}
 function draw(){if(COMPOSER)COMPOSER.render();else renderer.render(scene,camera);}
 const QNAME={ultra:'ultra',alto:'alto',medio:'médio',baixo:'baixo'};
-function applyQuality(){QC=QCFG[QUALITY];DYN.pr=targetPR();renderer.setPixelRatio(DYN.pr);renderer.setSize(innerWidth,innerHeight);
+function applyQuality(){QC=QCFG[QUALITY];DYN.pr=targetPR();DYN.probe=0;DYN.bad=0;DYN.hold=0;DYN.ceil=0;DYN.wasUp=false;renderer.setPixelRatio(DYN.pr);renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled=QC.shadow>0;sun.castShadow=QC.shadow>0;setShadowCfg();camera.far=QC.far;camera.updateProjectionMatrix();
   scene.traverse(o=>{if(o.material)[].concat(o.material).forEach(m=>m.needsUpdate=true);});
-  setGrassDensity();updateGrass(PLAYER.pos.x,PLAYER.pos.z,true);setPointScale();setupComposer();$('bGfx').textContent='Gráficos: '+QNAME[QUALITY];try{localStorage.setItem('olimpia-gfx',QUALITY);}catch(e){}}
-$('bGfx').onclick=()=>{GFX_AUTO=false;QUALITY=(IS_TOUCH?{alto:'medio',medio:'baixo',baixo:'alto'}:{ultra:'alto',alto:'medio',medio:'baixo',baixo:'ultra'})[QUALITY]||'alto';applyQuality();};
+  setGrassDensity();updateGrass(PLAYER.pos.x,PLAYER.pos.z,true);setPointScale();setupComposer();$('bGfx').textContent='Gráficos: '+QNAME[QUALITY];}
+$('bGfx').onclick=()=>{GFX_AUTO=false;QUALITY=(IS_TOUCH?{alto:'medio',medio:'baixo',baixo:'alto'}:{ultra:'alto',alto:'medio',medio:'baixo',baixo:'ultra'})[QUALITY]||'alto';applyQuality();try{localStorage.setItem('olimpia-gfx',QUALITY);}catch(e){}};
 addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();setPointScale();if(COMPOSER)COMPOSER.setSize(innerWidth,innerHeight);});
 
 // ---------- montagem do mundo ----------
@@ -3719,16 +3740,22 @@ function updateReflections(){const P=PLAYER.pos,cc=CUBE.cam;cc.position.set(P.x,
   renderer.setRenderTarget(CUBE.rt,CUBE.face);renderer.render(scene,cc.children[CUBE.face]);renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=au;renderer.shadowMap.needsUpdate=nu;
   CUBE.face=(CUBE.face+1)%6;if(CUBE.face===0)CUBE.rt.texture.needsPMREMUpdate=true;}
 // resolução automática: baixa a nitidez se o aparelho não aguentar 40 quadros por segundo e sobe quando sobra folga
-const DYN={pr:renderer.getPixelRatio(),t:0,n:0};
+const DYN={pr:renderer.getPixelRatio(),t:0,n:0,probe:0,bad:0,hold:0,ceil:0,ceilT:0,wasUp:false};
 function gfxNote(t){let el=$('gfxNote');if(!el){el=document.createElement('div');el.id='gfxNote';el.setAttribute('role','status');
     el.style.cssText='position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);background:rgba(28,20,14,.86);color:#f3e7cf;padding:8px 14px;border-radius:10px;font:500 14px/1.3 "Alegreya Sans",system-ui,sans-serif;z-index:60;pointer-events:none;max-width:86vw;text-align:center';document.body.appendChild(el);}
   el.textContent=t;el.hidden=false;clearTimeout(gfxNote.t);gfxNote.t=setTimeout(()=>{el.hidden=true;},4500);}
 // se mesmo na menor resolução o celular não passa de ~24 quadros por segundo, desce um nível de gráficos (só no automático)
-function autoGfx(fps,max){if(!GFX_AUTO||!STARTED||document.hidden)return;if(fps<24&&DYN.pr<=max*.5+.01)DYN.low=(DYN.low||0)+1;else DYN.low=0;
+function autoGfx(fps,max){if(!GFX_AUTO||!STARTED||document.hidden)return;if(fps<24&&(DYN.pr<=max*.5+.01||DYN.hold>0))DYN.low=(DYN.low||0)+1;else DYN.low=0;
   if(DYN.low>=3&&QUALITY!=='baixo'){DYN.low=0;QUALITY=QUALITY==='ultra'?'alto':QUALITY==='alto'?'medio':'baixo';applyQuality();gfxNote('Gráficos ajustados para '+QNAME[QUALITY]+' para o jogo rodar liso neste aparelho');}}
 function dynRes(realDt){DYN.t+=realDt;DYN.n++;if(DYN.t<1.5)return;const fps=DYN.n/DYN.t;DYN.t=0;DYN.n=0;const max=targetPR();let pr=DYN.pr;autoGfx(fps,max);
-  if(fps<FPS_CAP*.9&&pr>max*.5)pr=Math.max(max*.5,pr*.85);else if(fps>FPS_CAP*.97&&pr<max)pr=Math.min(max,pr*1.1);else return;
-  if(Math.abs(pr-DYN.pr)<.01)return;DYN.pr=pr;renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight);if(COMPOSER){COMPOSER.setPixelRatio(pr);COMPOSER.setSize(innerWidth,innerHeight);}setPointScale();}
+  if(DYN.ceilT>0&&--DYN.ceilT===0)DYN.ceil=0;
+  if(DYN.hold>0){DYN.hold--;return;}
+  // baixou a resolução e o jogo não ficou mais rápido? então o gargalo não é esse: volta a nitidez toda e para de mexer por um minuto
+  if(DYN.probe){const gain=fps/DYN.probe;DYN.probe=0;if(gain<1.06){if(++DYN.bad>=2){DYN.bad=0;DYN.hold=40;if(Math.abs(max-DYN.pr)>.01)setPR(max);return;}}else DYN.bad=0;}
+  if(fps<FPS_CAP*.9&&pr>max*.5){DYN.probe=fps;pr=Math.max(max*.5,pr*.85);if(DYN.wasUp){DYN.ceil=pr;DYN.ceilT=40;}DYN.wasUp=false;}
+  else if(fps>FPS_CAP*.97&&pr<max&&(!DYN.ceil||pr*1.1<=DYN.ceil+.001)){pr=Math.min(max,pr*1.1);DYN.wasUp=true;}else return;
+  if(Math.abs(pr-DYN.pr)<.01)return;setPR(pr);}
+function setPR(pr){DYN.pr=pr;renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight);if(COMPOSER){COMPOSER.setPixelRatio(pr);COMPOSER.setSize(innerWidth,innerHeight);}setPointScale();}
 // ---------- laço principal ----------
 let last=performance.now(),TT=0,acc10=0,acc4=0,acc2=0;const FOCUS=new T.Vector3();
 // limite de quadros: o jogo roda a 30 FPS (igual em telas de 60, 120 ou 144 Hz)
@@ -3736,9 +3763,9 @@ const FPS_CAP=30,FRAME_MS=1000/FPS_CAP;let nextFrameT=0;
 function frame(now){requestAnimationFrame(frame);if(window.__pause){last=now;return;}
   if(now<nextFrameT-1)return;nextFrameT=(nextFrameT===0||now-nextFrameT>FRAME_MS)?now+FRAME_MS:nextFrameT+FRAME_MS;
   const rdt=Math.max(0,(now-last)/1000);let dt=Math.min(.05,rdt);if(HITSTOP>0){HITSTOP-=rdt;dt*=.1;}last=now;tick(dt);if(STARTED)dynRes(rdt);if(FR%4===0)updateReflections();
-  FR++;if(QC.shadowEvery>1){renderer.shadowMap.autoUpdate=false;if(FR%QC.shadowEvery===0)renderer.shadowMap.needsUpdate=true;}else renderer.shadowMap.autoUpdate=true;draw();}
+  FR++;const se=WEAK_GPU?Math.max(2,QC.shadowEvery):QC.shadowEvery;if(se>1){renderer.shadowMap.autoUpdate=false;if(FR%se===0)renderer.shadowMap.needsUpdate=true;}else renderer.shadowMap.autoUpdate=true;draw();}
 let FR=0;
-window.__KEY=KEY;window.__step=(n,dt=.05)=>{for(let i=0;i<n;i++)tick(dt);};
+window.__KEY=KEY;window.__BEASTS=BEASTS;window.__step=(n,dt=.05)=>{for(let i=0;i<n;i++)tick(dt);};
 function tick(dt){TT+=dt;POSE_DT=dt;POSE_BLEND=1-Math.exp(-dt*12);GUST.value=.55+1.0*Math.pow(fbm(TT*.07,3.7,3),1.6)*1.6;
   WIND.value=TT;SKY_U.time.value=TT;waterMesh.material.uniforms.uTime.value=TT;
   scenTick(dt);if(STARTED){if(SCEN[S.scen].lock==null)S.time=(S.time+dt/720)%1;updatePlayer(dt);updateCamera(dt);FOCUS.copy(PLAYER.pos);updateInteriorLight(dt);}
@@ -3760,7 +3787,7 @@ function tick(dt){TT+=dt;POSE_DT=dt;POSE_BLEND=1-Math.exp(-dt*12);GUST.value=.55
       $('tTalk').classList.toggle('on',!!NEAR);
       $('stamFill').style.width=PLAYER.stam+'%';$('stam').style.opacity=PLAYER.stam<99.5||RACE.phase!=='off'?1:.25;$('stamFill').style.filter=PLAYER.exhausted?'grayscale(.8)':'';
       updateGrassView();drawMini();$('clock').textContent=clockText();updateToast(.1);AU.update(.1);}}
-  if(acc4>.25){acc4=0;const cp=camera.position;let lb=2;for(const n of NPCS){const d=(n.pos.x-cp.x)**2+(n.pos.z-cp.z)**2;n.h.g.visible=d<QC.npcDist*QC.npcDist&&!n.off2;if(n.h.g.visible){const w=d<22*22?'hi':d<55*55?'mid':'lo';if(w!==n.h.lod&&(n.h.hasGeo(w)||lb-->0))n.h.setLOD(w);n.h.mesh.castShadow=d<38*38;}}updateLODs(cp);
+  if(acc4>.25){acc4=0;const cp=camera.position;let lb=2;for(const n of NPCS){const d=(n.pos.x-cp.x)**2+(n.pos.z-cp.z)**2;n.h.g.visible=d<QC.npcDist*QC.npcDist&&!n.off2;if(n.h.g.visible){const w=d<22*22?'hi':d<55*55?'mid':'lo';if(w!==n.h.lod&&(n.h.hasGeo(w)||lb-->0))n.h.setLOD(w);n.h.mesh.castShadow=d<38*38;}}updateLODs(cp);beastLOD(cp);
     if(STARTED)checkSites();updateGrass(STARTED?PLAYER.pos.x:5,STARTED?PLAYER.pos.z:22,false);updateBlades(STARTED?PLAYER.pos.x:5,STARTED?PLAYER.pos.z:22,false);}
   if(acc2>5){acc2=0;if(STARTED&&RACE.phase==='off')save();}
 }
